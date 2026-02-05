@@ -1,0 +1,179 @@
+name: Build RustDesk Sciter (32-bit Windows)
+
+# ============================================
+# 🚀 نسخه 32 بیتی ویندوز - Sciter
+# زمان build: حدود 15-20 دقیقه
+# ============================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: 'آدرس سرور (مثال: desk.timextools.ir)'
+        required: true
+        default: 'desk.timextools.ir'
+        type: string
+      public_key:
+        description: 'کلید عمومی از id_ed25519.pub'
+        required: true
+        default: 'vuw04gfylmMzuWj2nFEV5a2gMbfsdnKwvbwsqhGBu0o='
+        type: string
+      app_name:
+        description: 'نام برنامه'
+        required: false
+        default: 'AWdesk'
+        type: string
+
+env:
+  RUST_VERSION: "1.75"
+  VCPKG_COMMIT_ID: "2023.04.15"
+  # تنظیم برای 32 بیت
+  TARGET_ARCH: "i686-pc-windows-msvc"
+  VCPKG_TRIPLET: "x86-windows-static"
+
+jobs:
+  build:
+    name: 🔨 Build Windows x86 (32-bit)
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Clone RustDesk
+        uses: actions/checkout@v4
+        with:
+          repository: rustdesk/rustdesk
+          submodules: recursive
+          ref: master
+
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: i686-pc-windows-msvc
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 🔧 Install LLVM
+        run: |
+          choco install -y llvm --version=15.0.2
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: 📦 Setup vcpkg
+        shell: bash
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          git checkout ${{ env.VCPKG_COMMIT_ID }}
+          ./bootstrap-vcpkg.bat
+          echo "VCPKG_ROOT=$PWD" >> $GITHUB_ENV
+
+      - name: 📚 Install Dependencies (32-bit)
+        shell: bash
+        run: |
+          # نصب وابستگی‌های 32 بیتی
+          $VCPKG_ROOT/vcpkg install libvpx:x86-windows-static libyuv:x86-windows-static opus:x86-windows-static aom:x86-windows-static
+
+      - name: 📥 Download Sciter (32-bit)
+        shell: bash
+        run: |
+          mkdir -p target/debug target/release target/i686-pc-windows-msvc/release
+          # دانلود نسخه 32 بیتی Sciter
+          curl -L -o target/debug/sciter.dll https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x32/sciter.dll
+          cp target/debug/sciter.dll target/release/
+          cp target/debug/sciter.dll target/i686-pc-windows-msvc/release/
+
+      - name: ⚙️ Configure Server & Key
+        shell: pwsh
+        run: |
+          Write-Host "🔧 تنظیم سرور: ${{ inputs.server }}"
+          
+          $configPath = "libs/hbb_common/src/config.rs"
+          $content = Get-Content $configPath -Raw
+          
+          # تنظیم آدرس سرور
+          $content = $content -replace 'pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[[^\]]*\];', 
+            "pub const RENDEZVOUS_SERVERS: &[&str] = &[`"${{ inputs.server }}`"];"
+          
+          # تنظیم کلید عمومی
+          $content = $content -replace 'pub const RS_PUB_KEY: &str = "[^"]*";',
+            "pub const RS_PUB_KEY: &str = `"${{ inputs.public_key }}`";"
+          
+          # تنظیم نام برنامه
+          $content = $content -replace 'Arc::new\(RwLock::new\("RustDesk"\.to_owned\(\)\)\)',
+            "Arc::new(RwLock::new(`"${{ inputs.app_name }}`".to_owned()))"
+          
+          Set-Content $configPath $content
+          Write-Host "✅ تنظیمات اعمال شد"
+
+      - name: 🎨 Configure Cargo.toml
+        shell: pwsh
+        run: |
+          $cargoPath = "Cargo.toml"
+          $content = Get-Content $cargoPath -Raw
+          
+          # فعال کردن inline build
+          $content = $content -replace 'default = \["use_dasp"\]', 'default = ["use_dasp", "inline"]'
+          
+          Set-Content $cargoPath $content
+
+      - name: 🖼️ Build Inline Resources
+        run: python res/inline-sciter.py
+
+      - name: 🔨 Build Application (32-bit)
+        shell: bash
+        env:
+          LIBCLANG_PATH: "C:/Program Files/LLVM/bin"
+          VCPKG_DEFAULT_TRIPLET: "x86-windows-static"
+        run: |
+          # بیلد برای معماری 32 بیت
+          cargo build --release --target i686-pc-windows-msvc
+          echo "✅ Build completed!"
+
+      - name: 📦 Package
+        shell: pwsh
+        run: |
+          $outputDir = "release"
+          New-Item -ItemType Directory -Force -Path $outputDir
+          
+          # کپی از مسیر 32 بیتی
+          Copy-Item "target/i686-pc-windows-msvc/release/rustdesk.exe" "$outputDir/${{ inputs.app_name }}.exe"
+          Copy-Item "target/debug/sciter.dll" $outputDir/
+          
+          # ایجاد فایل اطلاعات
+          @"
+# ${{ inputs.app_name }} Configuration
+# Server: ${{ inputs.server }}
+# Architecture: Windows x86 (32-bit)
+# Generated: $(Get-Date)
+"@ | Out-File "$outputDir/info.txt"
+          
+          Compress-Archive -Path "$outputDir/*" -DestinationPath "${{ inputs.app_name }}-windows-x86.zip"
+          
+          Write-Host "✅ Package created: ${{ inputs.app_name }}-windows-x86.zip"
+
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app_name }}-windows-x86
+          path: |
+            ${{ inputs.app_name }}-windows-x86.zip
+            release/
+          retention-days: 30
+
+      - name: 📊 Build Summary
+        shell: pwsh
+        run: |
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "✅ BUILD COMPLETED SUCCESSFULLY!"
+          Write-Host "========================================"
+          Write-Host ""
+          Write-Host "📋 Configuration:"
+          Write-Host "   App Name: ${{ inputs.app_name }}"
+          Write-Host "   Server: ${{ inputs.server }}"
+          Write-Host "   Architecture: x86 (32-bit)"
+          Write-Host ""
+          Write-Host "📥 Download your client from Artifacts section above"
+          Write-Host ""
