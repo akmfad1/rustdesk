@@ -32,6 +32,10 @@ jobs:
     name: 🔨 Build RAWdesk Windows x86 (32-bit)
     runs-on: windows-latest
     
+    permissions:
+      contents: read
+      actions: read
+    
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
