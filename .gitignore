@@ -55,3 +55,11 @@ vcpkg_installed
 flutter/lib/generated_plugin_registrant.dart
 libsciter.dylib
 flutter/web/
+# RAWdesk build artifacts
+release/
+*.zip
+res/*.original
+res/rawdesk/*.ico
+res/rawdesk/*.png
+res/rawdesk/*.svg
+!res/rawdesk/README.md

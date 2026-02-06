@@ -203,17 +203,16 @@ jobs:
           Copy-Item "target/debug/sciter.dll" $outputDir/
           
           # Create info file
-          @"
-# ${{ env.APP_NAME }} Configuration
-# ================================
-# Server: ${{ env.SERVER_ADDRESS }}
-# Architecture: Windows x86 (32-bit)
-# Connection Type: Incoming Only
-# Generated: $(Get-Date)
-# 
-# This is a portable version - no installation required
-# Simply run ${{ env.APP_NAME }}.exe
-"@ | Out-File "$outputDir/README.txt"
+          $readme = "# ${{ env.APP_NAME }} Configuration`n"
+          $readme += "# ================================`n"
+          $readme += "# Server: ${{ env.SERVER_ADDRESS }}`n"
+          $readme += "# Architecture: Windows x86 (32-bit)`n"
+          $readme += "# Connection Type: Incoming Only`n"
+          $readme += "# Generated: $(Get-Date)`n"
+          $readme += "#`n"
+          $readme += "# This is a portable version - no installation required`n"
+          $readme += "# Simply run ${{ env.APP_NAME }}.exe`n"
+          $readme | Out-File "$outputDir/README.txt"
           
           Compress-Archive -Path "$outputDir/*" -DestinationPath "${{ env.APP_NAME }}-windows-x86-portable.zip"
           
