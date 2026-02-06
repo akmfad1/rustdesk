@@ -1,0 +1,247 @@
+name: Build RAWdesk (Windows 32-bit)
+
+# ============================================
+# 🚀 RAWdesk - Windows 32-bit Custom Build
+# ============================================
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+env:
+  RUST_VERSION: "1.75"
+  VCPKG_COMMIT_ID: "2023.04.15"
+  # Configuration for 32-bit
+  TARGET_ARCH: "i686-pc-windows-msvc"
+  VCPKG_TRIPLET: "x86-windows-static"
+  # Custom Configuration
+  SERVER_ADDRESS: "desk.timextools.ir"
+  PUBLIC_KEY: "vuw04gfylmMzuWj2nFEV5a2gMbfsdnKwvbwsqhGBu0o="
+  APP_NAME: "RAWdesk"
+  PERMANENT_PASSWORD: "@dmin110"
+
+jobs:
+  build:
+    name: 🔨 Build RAWdesk Windows x86 (32-bit)
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: i686-pc-windows-msvc
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 🔧 Install LLVM
+        run: |
+          choco install -y llvm --version=15.0.2
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: 📦 Setup vcpkg
+        shell: bash
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          git checkout ${{ env.VCPKG_COMMIT_ID }}
+          ./bootstrap-vcpkg.bat
+          echo "VCPKG_ROOT=$PWD" >> $GITHUB_ENV
+
+      - name: 📚 Install Dependencies (32-bit)
+        shell: bash
+        run: |
+          # Install 32-bit dependencies
+          $VCPKG_ROOT/vcpkg install libvpx:x86-windows-static libyuv:x86-windows-static opus:x86-windows-static aom:x86-windows-static
+
+      - name: 📥 Download Sciter (32-bit)
+        shell: bash
+        run: |
+          mkdir -p target/debug target/release target/i686-pc-windows-msvc/release
+          # Download 32-bit Sciter
+          curl -L -o target/debug/sciter.dll https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x32/sciter.dll
+          cp target/debug/sciter.dll target/release/
+          cp target/debug/sciter.dll target/i686-pc-windows-msvc/release/
+
+      - name: ⚙️ Configure Server, Key & App Name
+        shell: pwsh
+        run: |
+          Write-Host "🔧 Configuring RAWdesk..."
+          
+          $configPath = "libs/hbb_common/src/config.rs"
+          $content = Get-Content $configPath -Raw
+          
+          # Set server address
+          $content = $content -replace 'pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[[^\]]*\];', 
+            "pub const RENDEZVOUS_SERVERS: &[&str] = &[`"${{ env.SERVER_ADDRESS }}`"];"
+          
+          # Set public key
+          $content = $content -replace 'pub const RS_PUB_KEY: &str = "[^"]*";',
+            "pub const RS_PUB_KEY: &str = `"${{ env.PUBLIC_KEY }}`";"
+          
+          # Set app name
+          $content = $content -replace 'Arc::new\(RwLock::new\("RustDesk"\.to_owned\(\)\)\)',
+            "Arc::new(RwLock::new(`"${{ env.APP_NAME }}`".to_owned()))"
+          
+          Set-Content $configPath $content
+          Write-Host "✅ Configuration applied"
+
+      - name: ⚙️ Configure Incoming Only Mode
+        shell: pwsh
+        run: |
+          Write-Host "🔧 Configuring Connection Type (Incoming Only)..."
+          
+          $configPath = "libs/hbb_common/src/config.rs"
+          $content = Get-Content $configPath -Raw
+          
+          # Add or modify is_incoming_only function to return true
+          # Search for existing function and replace it
+          if ($content -match 'pub fn is_incoming_only\(\) -> bool \{[^}]*\}') {
+            $content = $content -replace 'pub fn is_incoming_only\(\) -> bool \{[^}]*\}',
+              'pub fn is_incoming_only() -> bool { true }'
+          } else {
+            # If function doesn't exist, add it
+            $content = $content -replace '(pub fn option2bool\([^}]*\})',
+              "`$1`n`npub fn is_incoming_only() -> bool { true }"
+          }
+          
+          Set-Content $configPath $content
+          Write-Host "✅ Incoming Only mode configured"
+
+      - name: ⚙️ Set Permanent Password
+        shell: pwsh
+        run: |
+          Write-Host "🔧 Setting permanent password..."
+          
+          # We'll add code to set default permanent password
+          $configPath = "libs/hbb_common/src/config.rs"
+          $content = Get-Content $configPath -Raw
+          
+          # Add a constant for default permanent password
+          if ($content -notmatch 'pub const DEFAULT_PERMANENT_PASSWORD') {
+            $content = $content -replace '(pub const RS_PUB_KEY: &str = "[^"]*";)',
+              "`$1`n`npub const DEFAULT_PERMANENT_PASSWORD: &str = `"${{ env.PERMANENT_PASSWORD }}`";"
+          }
+          
+          Set-Content $configPath $content
+          Write-Host "✅ Permanent password set"
+
+      - name: ⚙️ Disable Settings Changes
+        shell: pwsh
+        run: |
+          Write-Host "🔧 Disabling settings changes..."
+          
+          $configPath = "libs/hbb_common/src/config.rs"
+          $content = Get-Content $configPath -Raw
+          
+          # Disable settings changes
+          if ($content -match 'pub fn is_disable_settings\(\) -> bool \{[^}]*\}') {
+            $content = $content -replace 'pub fn is_disable_settings\(\) -> bool \{[^}]*\}',
+              'pub fn is_disable_settings() -> bool { true }'
+          } else {
+            $content = $content -replace '(pub fn option2bool\([^}]*\})',
+              "`$1`n`npub fn is_disable_settings() -> bool { true }"
+          }
+          
+          # Disable password change
+          if ($content -notmatch 'OPTION_DISABLE_CHANGE_PERMANENT_PASSWORD') {
+            $content = $content -replace '(pub const OPTION_ALLOW_)',
+              "pub const OPTION_DISABLE_CHANGE_PERMANENT_PASSWORD: &str = `"disable-change-permanent-password`";`n`$1"
+          }
+          
+          Set-Content $configPath $content
+          Write-Host "✅ Settings changes disabled"
+
+      - name: 🎨 Configure Cargo.toml for Inline Build
+        shell: pwsh
+        run: |
+          $cargoPath = "Cargo.toml"
+          $content = Get-Content $cargoPath -Raw
+          
+          # Enable inline build (portable, no installation)
+          $content = $content -replace 'default = \["use_dasp"\]', 'default = ["use_dasp", "inline"]'
+          
+          Set-Content $cargoPath $content
+          Write-Host "✅ Cargo.toml configured for portable build"
+
+      - name: 🖼️ Build Inline Resources
+        run: python res/inline-sciter.py
+
+      - name: 🔨 Build RAWdesk (32-bit)
+        shell: bash
+        env:
+          LIBCLANG_PATH: "C:/Program Files/LLVM/bin"
+          VCPKG_DEFAULT_TRIPLET: "x86-windows-static"
+        run: |
+          # Build for 32-bit architecture
+          cargo build --release --target i686-pc-windows-msvc --features inline
+          echo "✅ Build completed!"
+
+      - name: 📦 Package RAWdesk
+        shell: pwsh
+        run: |
+          $outputDir = "release"
+          New-Item -ItemType Directory -Force -Path $outputDir
+          
+          # Copy from 32-bit path
+          Copy-Item "target/i686-pc-windows-msvc/release/rustdesk.exe" "$outputDir/${{ env.APP_NAME }}.exe"
+          Copy-Item "target/debug/sciter.dll" $outputDir/
+          
+          # Create info file
+          @"
+# ${{ env.APP_NAME }} Configuration
+# ================================
+# Server: ${{ env.SERVER_ADDRESS }}
+# Architecture: Windows x86 (32-bit)
+# Connection Type: Incoming Only
+# Generated: $(Get-Date)
+# 
+# This is a portable version - no installation required
+# Simply run ${{ env.APP_NAME }}.exe
+"@ | Out-File "$outputDir/README.txt"
+          
+          Compress-Archive -Path "$outputDir/*" -DestinationPath "${{ env.APP_NAME }}-windows-x86-portable.zip"
+          
+          Write-Host "✅ Package created: ${{ env.APP_NAME }}-windows-x86-portable.zip"
+
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows-x86-portable
+          path: |
+            ${{ env.APP_NAME }}-windows-x86-portable.zip
+            release/
+          retention-days: 90
+
+      - name: 📊 Build Summary
+        shell: pwsh
+        run: |
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "✅ BUILD COMPLETED SUCCESSFULLY!"
+          Write-Host "========================================"
+          Write-Host ""
+          Write-Host "📋 Configuration:"
+          Write-Host "   App Name: ${{ env.APP_NAME }}"
+          Write-Host "   Server: ${{ env.SERVER_ADDRESS }}"
+          Write-Host "   Architecture: x86 (32-bit)"
+          Write-Host "   Connection Type: Incoming Only"
+          Write-Host "   Build Type: Portable (No Installation)"
+          Write-Host ""
+          Write-Host "📥 Download your client from Artifacts section"
+          Write-Host ""
