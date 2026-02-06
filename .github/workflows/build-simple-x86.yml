@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           # نصب وابستگی‌های 32 بیتی
-          $VCPKG_ROOT/vcpkg install libvpx:x86-windows-static libyuv:x86-windows-static opus:x86-windows-static aom:x86-windows-static
+          $VCPKG_ROOT/vcpkg install --x-manifest-root=none libvpx:x86-windows-static libyuv:x86-windows-static opus:x86-windows-static aom:x86-windows-static
 
       - name: 📥 Download Sciter (32-bit)
         shell: bash
