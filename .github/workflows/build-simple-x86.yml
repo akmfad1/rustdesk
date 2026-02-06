@@ -57,7 +57,7 @@ jobs:
 
       - name: 🔧 Install LLVM
         run: |
-          choco install -y llvm --version=15.0.2
+          choco install -y llvm --version=15.0.2 --allow-downgrade --force
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: 📦 Setup vcpkg
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           # نصب وابستگی‌های 32 بیتی
-          $VCPKG_ROOT/vcpkg install libvpx:x86-windows-static libyuv:x86-windows-static opus:x86-windows-static aom:x86-windows-static
+          $VCPKG_ROOT/vcpkg install --x-manifest-root=none libvpx:x86-windows-static libyuv:x86-windows-static opus:x86-windows-static aom:x86-windows-static
 
       - name: 📥 Download Sciter (32-bit)
         shell: bash
@@ -142,12 +142,11 @@ jobs:
           Copy-Item "target/debug/sciter.dll" $outputDir/
           
           # ایجاد فایل اطلاعات
-          @"
-# ${{ inputs.app_name }} Configuration
-# Server: ${{ inputs.server }}
-# Architecture: Windows x86 (32-bit)
-# Generated: $(Get-Date)
-"@ | Out-File "$outputDir/info.txt"
+          $info = "# ${{ inputs.app_name }} Configuration`n"
+          $info += "# Server: ${{ inputs.server }}`n"
+          $info += "# Architecture: Windows x86 (32-bit)`n"
+          $info += "# Generated: $(Get-Date)`n"
+          $info | Out-File "$outputDir/info.txt"
           
           Compress-Archive -Path "$outputDir/*" -DestinationPath "${{ inputs.app_name }}-windows-x86.zip"
           
